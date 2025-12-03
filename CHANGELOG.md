@@ -2,8 +2,11 @@
 
 ## 0.45.0 - TBD
 
-#### Enhancements
+### Enhancements
+- Added download retry, resumption, and checksum verification to
+  `Historical::BatchDownload`
 - Added new venue, dataset, and publisher for Cboe Futures Exchange (`XCBF.PITCH`)
+- Upgraded default `httplib` version to 0.28.0
 
 ## 0.44.0 - 2025-11-18
 

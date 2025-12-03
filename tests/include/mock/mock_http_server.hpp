@@ -35,9 +35,6 @@ class MockHttpServer {
   void MockPostJson(const std::string& path,
                     const std::map<std::string, std::string>& params,
                     const nlohmann::json& json);
-  void MockGetDbn(const std::string& path,
-                  const std::map<std::string, std::string>& params,
-                  const std::string& dbn_path);
   void MockPostDbn(const std::string& path,
                    const std::map<std::string, std::string>& params,
                    const std::string& dbn_path);
@@ -47,6 +44,10 @@ class MockHttpServer {
   void MockPostDbn(const std::string& path,
                    const std::map<std::string, std::string>& params, Record record,
                    std::size_t count, std::size_t extra_bytes, std::size_t chunk_size);
+
+  void MockGetDbnFile(const std::string& path,
+
+                      const std::string& dbn_path);
 
  private:
   using SharedConstBuffer = std::shared_ptr<const detail::Buffer>;

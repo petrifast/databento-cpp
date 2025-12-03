@@ -4,6 +4,7 @@
 #include <httplib.h>
 
 #include <cstddef>
+#include <filesystem>
 #include <vector>
 
 #include "databento/constants.hpp"
@@ -75,18 +76,6 @@ void MockHttpServer::MockPostJson(const std::string& path,
       });
 }
 
-void MockHttpServer::MockGetDbn(const std::string& path,
-                                const std::map<std::string, std::string>& params,
-                                const std::string& dbn_path) {
-  constexpr std::size_t kChunkSize = 32;
-
-  // Read contents into buffer
-  auto buffer = EncodeToBuffer(dbn_path);
-
-  // Serve
-  server_.Get(path, MakeDbnStreamHandler(params, std::move(buffer), kChunkSize));
-}
-
 void MockHttpServer::MockPostDbn(const std::string& path,
                                  const std::map<std::string, std::string>& params,
                                  const std::string& dbn_path) {
@@ -132,6 +121,17 @@ void MockHttpServer::MockPostDbn(const std::string& path,
     }
   }
   server_.Post(path, MakeDbnStreamHandler(params, std::move(buffer), chunk_size));
+}
+
+void MockHttpServer::MockGetDbnFile(const std::string& path,
+                                    const std::string& dbn_path) {
+  server_.Get(path, [dbn_path](const httplib::Request& req, httplib::Response& resp) {
+    if (!req.has_header("Authorization")) {
+      resp.status = 401;
+      return;
+    }
+    resp.set_file_content(dbn_path, "application/octet-stream");
+  });
 }
 
 void MockHttpServer::CheckParams(const std::map<std::string, std::string>& params,

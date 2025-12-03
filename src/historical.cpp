@@ -9,18 +9,20 @@
 #include <algorithm>  // find_if
 #include <cstddef>    // size_t
 #include <cstdlib>    // get_env
-#include <filesystem>
-#include <iterator>  // back_inserter
+#include <ios>        // openmode
+#include <iterator>   // back_inserter
+#include <optional>
 #include <sstream>
-#include <string>
 #include <system_error>
 #include <utility>  // move
+#include <variant>
 
 #include "databento/constants.hpp"
 #include "databento/datetime.hpp"
 #include "databento/dbn_file_store.hpp"
 #include "databento/detail/dbn_buffer_decoder.hpp"
 #include "databento/detail/json_helpers.hpp"
+#include "databento/detail/sha256_hasher.hpp"
 #include "databento/enums.hpp"
 #include "databento/exceptions.hpp"  // Exception, JsonResponseError
 #include "databento/file_stream.hpp"
@@ -117,6 +119,76 @@ void TryCreateDir(const std::filesystem::path& dir_name) {
   }
   throw databento::Exception{"Unable to create directory "s +
                              dir_name.generic_string() + ": " + ec.message()};
+}
+
+struct AlreadyDownloaded {};
+using FileExistsResult = std::variant<AlreadyDownloaded, std::optional<httplib::Range>>;
+
+FileExistsResult CheckIfFileExists(
+    databento::ILogReceiver* log_receiver, const std::filesystem::path& output_path,
+    std::uint64_t exp_size, std::optional<databento::detail::Sha256Hasher>& hasher) {
+  static constexpr auto kMethod = "Historical::CheckIfFileExists";
+  std::error_code ec{};
+  const auto actual_size = std::filesystem::file_size(output_path, ec);
+  if (ec) {
+    return std::nullopt;
+  }
+  if (actual_size < exp_size) {
+    if (log_receiver->ShouldLog(databento::LogLevel::Debug)) {
+      std::ostringstream log;
+      log << '[' << kMethod << "] Found existing file, resuming download to "
+          << output_path << ", previously downloaded " << actual_size
+          << " bytes, total: " << exp_size << " bytes";
+      log_receiver->Receive(databento::LogLevel::Debug, log.str());
+    }
+    if (hasher) {
+      // Hash previously downloaded data
+      std::vector<std::byte> buf(1 << 23, std::byte{});
+      databento::InFileStream existing_file{output_path};
+      while (auto read_size = existing_file.ReadSome(buf.data(), buf.size())) {
+        hasher->Update(buf.data(), read_size);
+      }
+    }
+
+    return httplib::Range{actual_size, -1};
+  }
+  if (actual_size == exp_size) {
+    if (log_receiver->ShouldLog(databento::LogLevel::Debug)) {
+      std::ostringstream log;
+      log << '[' << kMethod << "] Skipping download as file at " << output_path
+          << " already exists and matches expected size";
+      log_receiver->Receive(databento::LogLevel::Debug, log.str());
+    }
+    return AlreadyDownloaded{};
+  }
+  std::ostringstream err;
+  err << "Batch file " << output_path << " already exists with size " << actual_size
+      << " which is larger than expected size " << exp_size;
+  throw databento::Exception{err.str()};
+}
+
+void VerifyHash(databento::ILogReceiver* log_receiver,
+                std::optional<databento::detail::Sha256Hasher>& hasher,
+                std::string_view exp_hash) {
+  static constexpr auto kMethod = "Historical::VerifyHash";
+
+  if (!hasher) {
+    return;
+  }
+  const auto hash = hasher->Finalize();
+  if (hash == exp_hash) {
+    if (log_receiver->ShouldLog(databento::LogLevel::Debug)) {
+      std::ostringstream log;
+      log << '[' << kMethod << "] Successfully verified checksum";
+      log_receiver->Receive(databento::LogLevel::Debug, log.str());
+    }
+  } else {
+    std::ostringstream log;
+    log << '[' << kMethod
+        << "] Downloaded file failed checksum verification, hash: " << hash
+        << " expected: " << exp_hash;
+    log_receiver->Receive(databento::LogLevel::Warning, log.str());
+  }
 }
 }  // namespace
 
@@ -296,7 +368,7 @@ std::vector<std::filesystem::path> Historical::BatchDownload(
   std::vector<std::filesystem::path> paths;
   for (const auto& file_desc : file_descs) {
     std::filesystem::path output_path = job_dir / file_desc.filename;
-    DownloadFile(file_desc.https_url, output_path);
+    DownloadFile(file_desc.https_url, output_path, file_desc.hash, file_desc.size);
     paths.emplace_back(std::move(output_path));
   }
   return paths;
@@ -318,45 +390,105 @@ std::filesystem::path Historical::BatchDownload(
                                "Filename not found for batch job " + job_id};
   }
   std::filesystem::path output_path = job_dir / file_desc_it->filename;
-  DownloadFile(file_desc_it->https_url, output_path);
+  DownloadFile(file_desc_it->https_url, output_path, file_desc_it->hash,
+               file_desc_it->size);
   return output_path;
 }
 
 void Historical::DownloadFile(const std::string& url,
-                              const std::filesystem::path& output_path) {
-  static const std::string kMethod = "Historical::DownloadFile";
+                              const std::filesystem::path& output_path,
+                              std::string_view hash, std::uint64_t exp_size) {
+  static constexpr auto kMethod = "Historical::DownloadFile";
   // extract path from URL
-  const auto protocol_divider = url.find("://");
-  std::string path;
+  const std::string path = [&url] {
+    const auto protocol_divider = url.find("://");
+    if (protocol_divider == std::string::npos) {
+      const auto slash = url.find_first_of('/');
+      if (slash == std::string::npos) {
+        throw InvalidArgumentError{kMethod, "url", "No slashes"};
+      }
+      return url.substr(slash);
+    } else {
+      const auto slash = url.find('/', protocol_divider + 3);
+      if (slash == std::string::npos) {
+        throw InvalidArgumentError{kMethod, "url", "No slashes"};
+      }
+      return url.substr(slash);
+    }
+  }();
 
-  if (protocol_divider == std::string::npos) {
-    const auto slash = url.find_first_of('/');
-    if (slash == std::string::npos) {
-      throw InvalidArgumentError{kMethod, "url", "No slashes"};
-    }
-    path = url.substr(slash);
-  } else {
-    const auto slash = url.find('/', protocol_divider + 3);
-    if (slash == std::string::npos) {
-      throw InvalidArgumentError{kMethod, "url", "No slashes"};
-    }
-    path = url.substr(slash);
+  const auto delimiter_idx = hash.find(':');
+  if (delimiter_idx == std::string::npos) {
+    throw databento::Exception{std::string{"Unexpected hash string format: "} +
+                               std::string{hash}};
   }
+  const auto hash_algo = hash.substr(0, delimiter_idx);
+  const auto exp_hash = hash.substr(delimiter_idx + 1);
+  std::optional<detail::Sha256Hasher> hasher{};
+  if (hash_algo == "sha256") {
+    hasher = detail::Sha256Hasher{};
+  } else {
+    log_receiver_->Receive(
+        LogLevel::Warning,
+        "Skipping checksum with unsupported hash algorithm " + std::string{hash_algo});
+  }
+
   std::ostringstream ss;
   ss << '[' << kMethod << "] Downloading batch file " << path << " to " << output_path;
   log_receiver_->Receive(LogLevel::Info, ss.str());
 
-  OutFileStream out_file{output_path};
-  this->client_.GetRawStream(
-      path, {}, [&out_file](const char* data, std::size_t length) {
-        out_file.WriteAll(reinterpret_cast<const std::byte*>(data), length);
-        return true;
-      });
+  constexpr auto kMaxRetries = 5;
+  auto retry = 0;
+  while (true) {
+    const auto exists_res =
+        ::CheckIfFileExists(log_receiver_, output_path, exp_size, hasher);
+    if (std::holds_alternative<AlreadyDownloaded>(exists_res)) {
+      return;
+    }
+    httplib::Headers http_headers;
+    const auto opt_range = std::get<std::optional<httplib::Range>>(exists_res);
+    std::ios::openmode mode = std::ios::binary;
+    if (opt_range) {
+      auto [key, val] = httplib::make_range_header({*opt_range});
+      http_headers.emplace(std::move(key), std::move(val));
+      // `ate` **and** `in` required to properly append
+      mode |= std::ios::in | std::ios::ate;
+    }
+    OutFileStream out_file{output_path, mode};
+    try {
+      this->client_.GetRawStream(
+          path, http_headers,
+          [&hasher, &out_file](const char* data, std::size_t length) {
+            const auto bytes = reinterpret_cast<const std::byte*>(data);
+            if (hasher) {
+              hasher->Update(bytes, length);
+            }
+            out_file.WriteAll(bytes, length);
+            return true;
+          });
+    } catch (const databento::Exception& exc) {
+      retry += 1;
+      if (retry == kMaxRetries) {
+        throw exc;
+      }
+      ss.str("");
+      ss << '[' << kMethod << "] Retrying download attempt " << retry + 1 << " after "
+         << exc.what();
+      log_receiver_->Receive(LogLevel::Error, ss.str());
+      // reset hasher
+      if (hasher) {
+        hasher = detail::Sha256Hasher{};
+      }
+      continue;
+    }
 
-  if (log_receiver_->ShouldLog(LogLevel::Debug)) {
-    ss.str("");
-    ss << '[' << kMethod << ']' << " Completed download of " << path;
-    log_receiver_->Receive(LogLevel::Debug, ss.str());
+    if (log_receiver_->ShouldLog(LogLevel::Debug)) {
+      ss.str("");
+      ss << '[' << kMethod << ']' << " Completed download of " << path;
+      log_receiver_->Receive(LogLevel::Debug, ss.str());
+    }
+    ::VerifyHash(log_receiver_, hasher, exp_hash);
+    return;
   }
 }
 

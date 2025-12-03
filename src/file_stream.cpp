@@ -11,7 +11,7 @@ InFileStream::InFileStream(const std::filesystem::path& file_path)
     : stream_{file_path, std::ios::binary} {
   if (stream_.fail()) {
     throw InvalidArgumentError{"InFileStream", "file_path",
-                               "Non-existent or invalid file at " + file_path.string()};
+                               "Non-existent or invalid file: " + file_path.string()};
   }
 }
 
@@ -33,10 +33,15 @@ std::size_t InFileStream::ReadSome(std::byte* buffer, std::size_t max_length) {
 using databento::OutFileStream;
 
 OutFileStream::OutFileStream(const std::filesystem::path& file_path)
-    : stream_{file_path, std::ios::binary} {
+    : OutFileStream{file_path, std::ios::binary} {}
+
+OutFileStream::OutFileStream(const std::filesystem::path& file_path,
+                             std::ios_base::openmode mode)
+    : stream_{file_path, mode} {
   if (stream_.fail()) {
-    throw InvalidArgumentError{"OutFileStream", "file_path",
-                               "Non-existent or invalid file"};
+    throw InvalidArgumentError{
+        "OutFileStream", "file_path",
+        "Can't open file for writing at path: " + file_path.string()};
   }
 }
 

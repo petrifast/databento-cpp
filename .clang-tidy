@@ -4,6 +4,7 @@ Checks: >
     bugprone-*,
     -bugprone-easily-swappable-parameters,
     clang-analyzer-*,
+    -clang-analyzer-optin.cplusplus.VirtualCall,
     clang-diagnostic-*,
     cppcore-guidelines-*,
     google-*,

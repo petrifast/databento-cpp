@@ -46,13 +46,12 @@ nlohmann::json HttpClient::PostJson(const std::string& path,
   return HttpClient::CheckAndParseResponse(path, std::move(res));
 }
 
-void HttpClient::GetRawStream(const std::string& path, const httplib::Params& params,
+void HttpClient::GetRawStream(const std::string& path, const httplib::Headers& headers,
                               const httplib::ContentReceiver& callback) {
-  const std::string full_path = httplib::append_query_params(path, params);
   std::string err_body{};
   int err_status{};
   const httplib::Result res = client_.Get(
-      full_path, MakeStreamResponseHandler(err_status),
+      path, headers, MakeStreamResponseHandler(err_status),
       [&callback, &err_body, &err_status](const char* data, std::size_t length) {
         // if an error response was received, read all content into
         // err_body

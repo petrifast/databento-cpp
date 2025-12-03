@@ -48,6 +48,7 @@ set(
   src/pretty_tests.cpp
   src/record_tests.cpp
   src/scoped_thread_tests.cpp
+  src/sha256_hasher_tests.cpp
   src/stream_op_helper_tests.cpp
   src/symbol_map_tests.cpp
   src/symbology_tests.cpp

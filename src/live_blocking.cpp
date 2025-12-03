@@ -1,19 +1,17 @@
 #include "databento/live_blocking.hpp"
 
-#include <openssl/sha.h>  // SHA256, SHA256_DIGEST_LENGTH
-
 #include <algorithm>  // copy
 #include <cctype>     // tolower
 #include <chrono>
 #include <cstddef>  // ptrdiff_t
 #include <cstdlib>
-#include <ios>  // hex, setfill, setw
 #include <limits>
 #include <sstream>
 #include <variant>
 
 #include "databento/constants.hpp"  //  kApiKeyLength
 #include "databento/dbn_decoder.hpp"
+#include "databento/detail/sha256_hasher.hpp"
 #include "databento/detail/tcp_client.hpp"
 #include "databento/exceptions.hpp"  // LiveApiError
 #include "databento/live.hpp"        // LiveBuilder
@@ -320,20 +318,9 @@ std::uint64_t LiveBlocking::Authenticate() {
 }
 
 std::string LiveBlocking::GenerateCramReply(std::string_view challenge_key) {
-  std::array<unsigned char, SHA256_DIGEST_LENGTH> sha{};
-  const unsigned char* sha_res =
-      ::SHA256(reinterpret_cast<const unsigned char*>(challenge_key.data()),
-               challenge_key.size(), sha.data());
-  if (sha_res == nullptr) {
-    throw LiveApiError{"Unable to generate SHA 256"};
-  }
-
   std::ostringstream auth_stream;
-  for (const unsigned char c : sha) {
-    auth_stream << std::hex << std::setw(2) << std::setfill('0')
-                << static_cast<std::uint16_t>(c);
-  }
-  auth_stream << '-' << key_.substr(kApiKeyLength - kBucketIdLength);
+  auth_stream << detail::Sha256Hash(challenge_key) << '-'
+              << key_.substr(kApiKeyLength - kBucketIdLength);
   return auth_stream.str();
 }
 

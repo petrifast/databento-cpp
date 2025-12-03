@@ -11,12 +11,10 @@
 #include "databento/exceptions.hpp"
 
 namespace databento {
-// A RAII for creating a file on construction and removing it when the class
-// goes out of scope.
+// A RAII class removing  a file when the object goes out of scope.
 class TempFile {
  public:
   explicit TempFile(std::filesystem::path path) : path_{std::move(path)} {
-    std::ifstream f{path_};
     if (Exists()) {
       throw InvalidArgumentError{
           "TempFile::TempFile", "path",
