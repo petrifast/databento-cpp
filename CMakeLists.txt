@@ -128,6 +128,10 @@ endif()
 
 find_package(OpenSSL REQUIRED)
 find_package(zstd REQUIRED)
+if (APPLE)
+  find_library(CORE_FOUNDATION_LIB CoreFoundation REQUIRED)
+  find_library(CFNETWORK_LIB CFNetwork REQUIRED)
+endif()
 if(NOT TARGET zstd::libzstd)
   if(TARGET zstd::libzstd_shared)
     add_library(zstd::libzstd ALIAS zstd::libzstd_shared)
@@ -223,6 +227,9 @@ target_link_libraries(
     OpenSSL::SSL
     Threads::Threads
     zstd::libzstd
+    # macOS-specific libraries required by httplib
+    $<$<PLATFORM_ID:Darwin>:${CFNETWORK_LIB}>
+    $<$<PLATFORM_ID:Darwin>:${CORE_FRAMEWORK_LIB}>
 )
 
 target_compile_definitions(
