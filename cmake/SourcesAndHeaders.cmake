@@ -13,6 +13,7 @@ set(headers
   include/databento/detail/json_helpers.hpp
   include/databento/detail/scoped_fd.hpp
   include/databento/detail/scoped_thread.hpp
+  include/databento/detail/sha256_hasher.hpp
   include/databento/detail/tcp_client.hpp
   include/databento/detail/zstd_stream.hpp
   include/databento/enums.hpp
@@ -54,6 +55,7 @@ set(sources
   src/detail/http_client.cpp
   src/detail/json_helpers.cpp
   src/detail/scoped_fd.cpp
+  src/detail/sha256_hasher.cpp
   src/detail/tcp_client.cpp
   src/detail/zstd_stream.cpp
   src/enums.cpp

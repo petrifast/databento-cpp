@@ -25,6 +25,7 @@ class InFileStream : public IReadable {
 class OutFileStream : public IWritable {
  public:
   explicit OutFileStream(const std::filesystem::path& file_path);
+  OutFileStream(const std::filesystem::path& file_path, std::ios_base::openmode mode);
 
   void WriteAll(const std::byte* buffer, std::size_t length) override;
 

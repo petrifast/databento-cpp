@@ -5,6 +5,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -20,6 +21,7 @@
 #include "databento/dbn_file_store.hpp"
 #include "databento/enums.hpp"
 #include "databento/exceptions.hpp"  // Exception
+#include "databento/file_stream.hpp"
 #include "databento/historical.hpp"
 #include "databento/log.hpp"
 #include "databento/metadata.hpp"
@@ -223,14 +225,18 @@ TEST_F(HistoricalTests, TestBatchListFiles) {
 
 static const nlohmann::json kListFilesResp{
     {{"filename", "test.dbn"},
-     {"size", {}},
-     {"hash", {}},
+     // size of test_data.mbo.v3.dbn
+     {"size", 472},
+     {"hash",
+      // $ sha256 test_data.mbo.v3.dbn
+      "sha256:d2a526d952f845ab8f03ceac42ec828a2541e0b5e2e8a64df2e8bbaa1e898184"},
      {"urls",
       {{"https", "https://api.databento.com/v0/job_id/test.dbn"},
        {"ftp", "ftp://ftp.databento.com/job_id/test.dbn"}}}},
     {{"filename", "test_metadata.json"},
-     {"size", {}},
-     {"hash", {}},
+     {"size", 15},
+     {"hash",
+      "sha256:e43abcf3375244839c012f9633f95862d232a95b00d5bc7348b3098b9fed7f32"},
      {"urls",
       {{"https", "https://api.databento.com/v0/job_id/test_metadata.json"},
        {"ftp", "ftp://ftp.databento.com/job_id/test_metadata.json"}}}}};
@@ -241,14 +247,12 @@ TEST_F(HistoricalTests, TestBatchDownloadAll) {
   const TempFile temp_dbn_file{tmp_path_ / "job123/test.dbn"};
   mock_server_.MockGetJson("/v0/batch.list_files", {{"job_id", kJobId}},
                            kListFilesResp);
-  mock_server_.MockGetDbn("/v0/job_id/test.dbn", {},
-                          TEST_DATA_DIR "/test_data.mbo.v3.dbn");
+  mock_server_.MockGetDbnFile("/v0/job_id/test.dbn",
+                              TEST_DATA_DIR "/test_data.mbo.v3.dbn");
   mock_server_.MockGetJson("/v0/job_id/test_metadata.json", {{"key", "value"}});
   const auto port = mock_server_.ListenOnThread();
 
   databento::Historical target = Client(port);
-  ASSERT_FALSE(temp_metadata_file.Exists());
-  ASSERT_FALSE(temp_dbn_file.Exists());
   const std::vector<std::filesystem::path> paths =
       target.BatchDownload(tmp_path_, kJobId);
   EXPECT_TRUE(temp_metadata_file.Exists());
@@ -278,11 +282,36 @@ TEST_F(HistoricalTests, TestBatchDownloadSingle) {
   const auto port = mock_server_.ListenOnThread();
 
   databento::Historical target = Client(port);
-  ASSERT_FALSE(temp_metadata_file.Exists());
   const std::filesystem::path path =
       target.BatchDownload(tmp_path_, kJobId, "test_metadata.json");
   EXPECT_TRUE(temp_metadata_file.Exists());
   EXPECT_EQ(path.lexically_normal(), temp_metadata_file.Path().lexically_normal());
+}
+
+TEST_F(HistoricalTests, TestBatchDownloadResume) {
+  const auto kJobId = "job123";
+  const TempFile temp_dbn_file{tmp_path_ / "job123/test.dbn"};
+  const auto source_path = TEST_DATA_DIR "/test_data.mbo.v3.dbn";
+  mock_server_.MockGetJson("/v0/batch.list_files", {{"job_id", kJobId}},
+                           kListFilesResp);
+  mock_server_.MockGetDbnFile("/v0/job_id/test.dbn", source_path);
+  // Copy some of the file
+  {
+    InFileStream source{source_path};
+    OutFileStream partial_dbn_file{temp_dbn_file.Path()};
+    std::array<std::byte, 50> buf;
+    source.ReadExact(buf.data(), buf.size());
+    partial_dbn_file.WriteAll(buf.data(), buf.size());
+  }
+  ASSERT_EQ(std::filesystem::file_size(temp_dbn_file.Path()), 50);
+  const auto port = mock_server_.ListenOnThread();
+  databento::Historical target = Client(port);
+  const std::filesystem::path path =
+      target.BatchDownload(tmp_path_, kJobId, "test.dbn");
+  EXPECT_EQ(path.lexically_normal(), temp_dbn_file.Path().lexically_normal());
+  // SHA verification will happen within `BatchDownload`, but check sizes as a sanity
+  // check
+  EXPECT_EQ(std::filesystem::file_size(path), std::filesystem::file_size(source_path));
 }
 
 TEST_F(HistoricalTests, TestBatchDownloadSingleInvalidFile) {

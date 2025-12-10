@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <map>  // multimap
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "databento/batch.hpp"     // BatchJob
@@ -225,7 +226,8 @@ class Historical {
              std::string user_agent_ext);
 
   BatchJob BatchSubmitJob(const HttplibParams& params);
-  void DownloadFile(const std::string& url, const std::filesystem::path& output_path);
+  void DownloadFile(const std::string& url, const std::filesystem::path& output_path,
+                    std::string_view hash, std::uint64_t exp_size);
   std::vector<BatchJob> BatchListJobs(const HttplibParams& params);
   std::vector<DatasetConditionDetail> MetadataGetDatasetCondition(
       const HttplibParams& params);

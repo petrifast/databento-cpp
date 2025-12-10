@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.24..4.0)
 
 project(
   databento
-  VERSION 0.44.0
+  VERSION 0.45.0
   LANGUAGES CXX
   DESCRIPTION "Official Databento client library"
 )
@@ -128,6 +128,10 @@ endif()
 
 find_package(OpenSSL REQUIRED)
 find_package(zstd REQUIRED)
+if (APPLE)
+  find_library(CORE_FOUNDATION_LIB CoreFoundation REQUIRED)
+  find_library(CFNETWORK_LIB CFNetwork REQUIRED)
+endif()
 if(NOT TARGET zstd::libzstd)
   if(TARGET zstd::libzstd_shared)
     add_library(zstd::libzstd ALIAS zstd::libzstd_shared)
@@ -178,7 +182,7 @@ if(${PROJECT_NAME_UPPERCASE}_USE_EXTERNAL_HTTPLIB)
     find_package(httplib REQUIRED)
   endif()
 else()
-  set(httplib_version 0.20.0)
+  set(httplib_version 0.28.0)
   FetchContent_Declare(
     httplib
     URL https://github.com/yhirose/cpp-httplib/archive/refs/tags/v${httplib_version}.tar.gz
@@ -223,6 +227,9 @@ target_link_libraries(
     OpenSSL::SSL
     Threads::Threads
     zstd::libzstd
+    # macOS-specific libraries required by httplib
+    $<$<PLATFORM_ID:Darwin>:${CFNETWORK_LIB}>
+    $<$<PLATFORM_ID:Darwin>:${CORE_FRAMEWORK_LIB}>
 )
 
 target_compile_definitions(
