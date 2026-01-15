@@ -409,6 +409,8 @@ enum class Publisher : std::uint16_t {
   XeeeEobiXoff = 104,
   // Cboe Futures Exchange
   XcbfPitchXcbf = 105,
+  // Cboe Futures Exchange - Off-Market Trades
+  XcbfPitchXoff = 106,
 };
 
 // Get a Publisher's Venue.
