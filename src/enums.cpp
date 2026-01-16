@@ -520,6 +520,18 @@ const char* ToString(StatType stat_type) {
     case StatType::UncrossingPrice: {
       return "UncrossingPrice";
     }
+    case StatType::UpperPriceLimit: {
+      return "UpperPriceLimit";
+    }
+    case StatType::LowerPriceLimit: {
+      return "LowerPriceLimit";
+    }
+    case StatType::BlockVolume: {
+      return "BlockVolume";
+    }
+    case StatType::VenueSpecificVolume1: {
+      return "VenueSpecificVolume1";
+    }
     default: {
       return "Unknown";
     }
