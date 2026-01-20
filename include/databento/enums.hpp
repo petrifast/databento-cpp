@@ -416,6 +416,20 @@ enum StatType : std::uint16_t {
   // official opening auction nor the official closing auction. `price` will be set.
   // `quantity` will be set when provided by the venue.
   UncrossingPrice = 16,
+  // The exchange defined upper price limit. `price` will be set with the standard
+  // precision.
+  UpperPriceLimit = 17,
+  // The exchange defined lower price limit. `price` will be set with the standard
+  // precision.
+  LowerPriceLimit = 18,
+  // The number of Block contracts cleared for an instrument on the previous trading
+  // date.
+  // `quantity` will be set. `ts_ref` will indicate the trading date of the volume.
+  BlockVolume = 19,
+  // A venue specific volume statistic. Refer to the venue documentation for more
+  // information.
+  // `quantity` will be set.
+  VenueSpecificVolume1 = 10001,
 };
 }  // namespace stat_type
 using stat_type::StatType;
